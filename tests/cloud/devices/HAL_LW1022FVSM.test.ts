@@ -135,4 +135,189 @@ describe('HAL_LW1022FVSM fork mapper', () => {
             dev.drop()
         }
     })
+
+    test('initial values publish climate current temperature plus V1 sensor states', (t) => {
+        const { ha, dev } = buildReadyDevice(t)
+
+        try {
+            assert.equal(ha.getProperty(DEVICE_ID, 'climate', 'current_temperature'), 22.5)
+            assert.equal(ha.getProperty(DEVICE_ID, 'room_temperature', 'state'), 22.5)
+            assert.equal(ha.getProperty(DEVICE_ID, 'estimated_power', 'state'), 5)
+            assert.equal(ha.getProperty(DEVICE_ID, 'outside_temperature', 'state'), 22.76)
+        } finally {
+            dev.drop()
+        }
+    })
+
+    test('later TLV updates fan out 0x1fd without breaking climate current temperature', (t) => {
+        const { ha, dev } = buildReadyDevice(t)
+
+        try {
+            dev.processKeyValue(0x1fd, 43)
+
+            assert.equal(ha.getProperty(DEVICE_ID, 'climate', 'current_temperature'), 21.5)
+            assert.equal(ha.getProperty(DEVICE_ID, 'room_temperature', 'state'), 21.5)
+        } finally {
+            dev.drop()
+        }
+    })
+
+    test('does not create trailing-dash V1 topics or duplicate RAC replacement components', (t) => {
+        const { ha, dev } = buildReadyDevice(t)
+
+        try {
+            const c = components(ha)
+            const properties = ha.devices[DEVICE_ID].properties
+
+            assert.equal(c.room_temperature.state_topic, '$this/room_temperature')
+            assert.equal(c.estimated_power.state_topic, '$this/estimated_power')
+            assert.equal(c.outside_temperature.state_topic, '$this/outside_temperature')
+            assert.equal(Object.hasOwn(properties, 'room_temperature-'), false)
+            assert.equal(Object.hasOwn(properties, 'estimated_power-'), false)
+            assert.equal(Object.hasOwn(properties, 'outside_temperature-'), false)
+            assert.equal(Object.hasOwn(c, 'energy_current'), false)
+            assert.equal(Object.hasOwn(c, 'oduairtemp'), false)
+            assert.equal(Object.hasOwn(properties, 'energy_current-'), false)
+            assert.equal(Object.hasOwn(properties, 'oduairtemp-'), false)
+        } finally {
+            dev.drop()
+        }
+    })
+
+    test('suppresses out-of-scope RAC optional diagnostics in HAL discovery', (t) => {
+        const { ha, dev } = buildReadyDevice(t)
+
+        try {
+            const c = components(ha)
+            const denied = [
+                'error',
+                'capacity',
+                'eev',
+                'pipeintemp',
+                'pipeouttemp',
+                'oduhextemp',
+                'oduairtemp',
+                'energy_current',
+                'autodry',
+                'autodryremain',
+                'filterused',
+                'filterlife',
+                'changeddate',
+                'filterreset',
+            ]
+
+            for (const key of denied) {
+                assert.equal(Object.hasOwn(c, key), false, `${key} should not be discovered`)
+            }
+        } finally {
+            dev.drop()
+        }
+    })
+
+    test('suppresses filter diagnostics even if filter data is present', (t) => {
+        const { ha, dev } = buildRawConfiguredDevice(
+            t,
+            {
+                0x1fd: 44,
+                0x2b3: 95,
+                0x332: 133,
+            },
+            (device) => {
+                device.filterUsedTime = 12
+                device.filterLifeTime = 100
+                device.filterChangedDate = 20260707
+            },
+        )
+
+        try {
+            const c = components(ha)
+            const properties = ha.devices[DEVICE_ID].properties
+
+            for (const key of ['filterused', 'filterlife', 'changeddate', 'filterreset']) {
+                assert.equal(Object.hasOwn(c, key), false, `${key} should not be discovered`)
+            }
+            assert.equal(Object.hasOwn(dev.fields_by_ha, 'filterreset'), false)
+
+            dev.publishFilterData()
+
+            assert.equal(Object.hasOwn(properties, 'filterused'), false)
+            assert.equal(Object.hasOwn(properties, 'filterlife'), false)
+            assert.equal(Object.hasOwn(properties, 'filterchangeddate'), false)
+        } finally {
+            dev.drop()
+        }
+    })
+
+    test('estimated power registers and clamps when 0x2b3 is zero', (t) => {
+        const { ha, dev } = buildRawConfiguredDevice(t, {
+            0x1fd: 44,
+            0x2b3: 0,
+            0x332: 133,
+        })
+
+        try {
+            assert.ok(components(ha).estimated_power)
+            assert.equal(ha.getProperty(DEVICE_ID, 'estimated_power', 'state'), 5)
+        } finally {
+            dev.drop()
+        }
+    })
+
+    test('estimated power registers and clamps when 0x2b3 is below 60', (t) => {
+        const { ha, dev } = buildRawConfiguredDevice(t, {
+            0x1fd: 44,
+            0x2b3: 50,
+            0x332: 133,
+        })
+
+        try {
+            assert.ok(components(ha).estimated_power)
+            assert.equal(ha.getProperty(DEVICE_ID, 'estimated_power', 'state'), 5)
+        } finally {
+            dev.drop()
+        }
+    })
+
+    test('estimated power publishes raw minus 60 when 0x2b3 is above 60', (t) => {
+        const { ha, dev } = buildRawConfiguredDevice(t, {
+            0x1fd: 44,
+            0x2b3: 95,
+            0x332: 133,
+        })
+
+        try {
+            assert.ok(components(ha).estimated_power)
+            assert.equal(ha.getProperty(DEVICE_ID, 'estimated_power', 'state'), 35)
+        } finally {
+            dev.drop()
+        }
+    })
+
+    test('estimated power component is absent when 0x2b3 is absent', (t) => {
+        const { ha, dev } = buildRawConfiguredDevice(t, {
+            0x1fd: 44,
+            0x332: 133,
+        })
+
+        try {
+            assert.equal(Object.hasOwn(components(ha), 'estimated_power'), false)
+            assert.equal(ha.getProperty(DEVICE_ID, 'estimated_power', 'state'), undefined)
+        } finally {
+            dev.drop()
+        }
+    })
+
+    test('outside temperature component is absent when 0x332 is absent', (t) => {
+        const { ha, dev } = buildRawConfiguredDevice(t, {
+            0x1fd: 44,
+            0x2b3: 95,
+        })
+
+        try {
+            assert.equal(Object.hasOwn(components(ha), 'outside_temperature'), false)
+            assert.equal(ha.getProperty(DEVICE_ID, 'outside_temperature', 'state'), undefined)
+        } finally {
+            dev.drop()
+        }
+    })
 })
