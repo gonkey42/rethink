@@ -143,6 +143,21 @@ describe(MODEL_ID, () => {
         dev.drop()
     })
 
+    test('base RAC keeps optional diagnostic sensors when source TLVs are present', (t) => {
+        const { ha, dev } = buildReadyDevice(t)
+
+        try {
+            const components = ha.devices[DEVICE_ID].config!.components as Record<string, Record<string, unknown>>
+
+            assert.ok(components.autodry, 'base RAC autodry remains available')
+            assert.ok(components.autodryremain, 'base RAC autodryremain remains available')
+            assert.equal(components.autodry.entity_category, 'diagnostic')
+            assert.equal(components.autodryremain.entity_category, 'diagnostic')
+        } finally {
+            dev.drop()
+        }
+    })
+
     test('HA write climate-mode=fan_only emits expected bytes', (t) => {
         const { thinq, dev, ha } = buildReadyDevice(t)
         // Pre-state observed in the capture at the moment of this write.
