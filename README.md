@@ -1,5 +1,10 @@
 # rethink
 
+> [!NOTE]
+> This is my public personal fork of [anszom/rethink](https://github.com/anszom/rethink).
+> It is maintained for my own home deployment and my LG LW1022FVSM window AC, with fork-specific Home Assistant/MQTT behavior.
+> For general use, support, or upstream development, start with the upstream project.
+
 The goal of this project is to de-cloud LG ThinQ-branded appliances, meaning to communicate with them without using the official LG app and cloud service.
 The project is developed by reverse engineering various components of the ThinQ ecosystem.
 
