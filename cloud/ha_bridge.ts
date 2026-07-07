@@ -1,6 +1,7 @@
 import POT_056905_WW from './devices/POT_056905_WW'
 import WTDN3 from './devices/WTDN3'
 import RAC_056905_WW from './devices/RAC_056905_WW'
+import HAL_LW1022FVSM from './devices/HAL_LW1022FVSM'
 import Dev_2REF11EIDA__4 from './devices/2REF11EIDA__4'
 import Dev_2REF11EBIVPC4 from './devices/2REF11EBIVPC4'
 import Dev_2RES1VE61NFA2 from './devices/2RES1VE61NFA2'
@@ -29,7 +30,7 @@ const t2deviceTypes: Record<string, T2Factory> = {
     POT_056905_WW,
     RAC_056905_WW,
     ['RAC_0B0001_WW']: RAC_056905_WW, // a different European variant (deviceType 401, RTK_RTL8720cm), same TLV handler
-    WIN_056905_WW: RAC_056905_WW,
+    WIN_056905_WW: HAL_LW1022FVSM,
     ['2REF11EIDA__4']: Dev_2REF11EIDA__4,
     ['2REF11EBIVPC4']: Dev_2REF11EBIVPC4,
     ['2RES1VE61NFA2']: Dev_2RES1VE61NFA2,

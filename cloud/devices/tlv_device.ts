@@ -11,6 +11,7 @@ export type FieldDefinition = {
     id?: number
     name: string
     comp: string
+    property?: string
     state_topic?: string
     readable?: boolean
     writable?: boolean
@@ -25,7 +26,7 @@ export default class TLVDevice extends HADevice {
     query_timer: ReturnType<typeof setInterval> | undefined
     query_last_timestamp: number | undefined = undefined
     query_last_interval: number | undefined = undefined
-    fields_by_id: Record<number, FieldDefinition> = {}
+    fields_by_id: Record<number, FieldDefinition[]> = {}
     fields_by_ha: Record<string, FieldDefinition> = {}
     raw_clip_state: Record<number, number> = {}
     query_caps_timeout: ReturnType<typeof setInterval> | undefined = undefined
@@ -50,9 +51,12 @@ export default class TLVDevice extends HADevice {
 
     // we waste memory by storing the field set per-device, not per-class. Whatever.
     addField(config: DeviceDiscovery, options: FieldDefinition, autoreg?: boolean) {
-        if (options.id) this.fields_by_id[options.id] = options
+        if (options.id != null) {
+            if (!this.fields_by_id[options.id]) this.fields_by_id[options.id] = []
+            this.fields_by_id[options.id].push(options)
+        }
 
-        let fullName = options.comp + '-' + options.name
+        let fullName = this.fieldProperty(options)
         this.fields_by_ha[fullName] = options
 
         if (autoreg !== false) {
@@ -70,6 +74,14 @@ export default class TLVDevice extends HADevice {
 
             if (options.writable !== false) target[topicPrefix + 'command_topic'] = '$this/' + fullName + '/set'
         }
+    }
+
+    fieldProperty(options: FieldDefinition) {
+        return options.property ?? options.comp + '-' + options.name
+    }
+
+    fieldDefinitions(id: number) {
+        return this.fields_by_id[id] ?? []
     }
 
     // clip-side
@@ -270,9 +282,12 @@ export default class TLVDevice extends HADevice {
     processKeyValue(k: number, v: number) {
         this.raw_clip_state[k] = v
 
-        const def = this.fields_by_id[k]
-        if (!def) return
+        for (const def of this.fieldDefinitions(k)) {
+            this.processFieldValue(def, v)
+        }
+    }
 
+    processFieldValue(def: FieldDefinition, v: number) {
         let processed: string | number = v
 
         if (def.read_xform) {
@@ -286,7 +301,7 @@ export default class TLVDevice extends HADevice {
         if (doRead) {
             if (def.readable === false) return
 
-            let fullName = def.comp + '-' + def.name
+            let fullName = this.fieldProperty(def)
             this.HA.publishProperty(this.id, fullName, processed)
         }
     }

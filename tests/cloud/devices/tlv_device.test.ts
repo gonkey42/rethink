@@ -145,3 +145,60 @@ test('setProperty with write_attach as array sends additional TLVs', () => {
     assert.equal(tlv[1].t, 0x201)
     assert.equal(tlv[1].v, 9)
 })
+
+test('same TLV id can publish to multiple HA properties', () => {
+    const { ha, dev, config } = makeDevice()
+    config.components.climate = {
+        platform: 'climate',
+        unique_id: '$deviceid-climate',
+        name: null,
+    }
+    config.components.room_temperature = {
+        platform: 'sensor',
+        unique_id: '$deviceid-room_temperature',
+        name: 'Room temperature',
+    }
+
+    dev.addField(config, {
+        id: 0x1fd,
+        name: 'current_temperature',
+        comp: 'climate',
+        state_topic: 'topic',
+        writable: false,
+        read_xform: (raw) => raw / 2,
+    })
+    dev.addField(config, {
+        id: 0x1fd,
+        name: '',
+        comp: 'room_temperature',
+        property: 'room_temperature',
+        writable: false,
+        read_xform: (raw) => raw / 2,
+    })
+
+    dev.processKeyValue(0x1fd, 45)
+
+    assert.equal(ha.devices[DEVICE_ID]?.properties['climate-current_temperature'], 22.5)
+    assert.equal(ha.devices[DEVICE_ID]?.properties.room_temperature, 22.5)
+})
+
+test('property override registers exact state and command topics without trailing dash', () => {
+    const { dev, config } = makeDevice()
+    config.components.exact = {
+        platform: 'sensor',
+        unique_id: '$deviceid-exact',
+        name: 'Exact',
+    }
+
+    dev.addField(config, {
+        id: 0x332,
+        name: '',
+        comp: 'exact',
+        property: 'outside_temperature',
+        writable: false,
+    })
+
+    assert.equal((config.components.exact as Record<string, unknown>).state_topic, '$this/outside_temperature')
+    assert.equal(Object.hasOwn(dev.fields_by_ha, 'outside_temperature'), true)
+    assert.equal(Object.hasOwn(dev.fields_by_ha, 'exact-'), false)
+})

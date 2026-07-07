@@ -161,9 +161,9 @@ export default class Device extends TLVDevice {
             '-' +
             (this.filterChangedDate % 100).toString().padStart(2, '0')
 
-        this.HA.publishProperty(this.id, 'filterused', this.filterUsedTime)
-        this.HA.publishProperty(this.id, 'filterlife', this.filterLifeTime)
-        this.HA.publishProperty(this.id, 'filterchangeddate', changedDate)
+        if (this.allowRACComponent('filterused')) this.HA.publishProperty(this.id, 'filterused', this.filterUsedTime)
+        if (this.allowRACComponent('filterlife')) this.HA.publishProperty(this.id, 'filterlife', this.filterLifeTime)
+        if (this.allowRACComponent('changeddate')) this.HA.publishProperty(this.id, 'filterchangeddate', changedDate)
     }
 
     processFilterCmdResp(success: boolean, data: Buffer) {
@@ -319,6 +319,26 @@ export default class Device extends TLVDevice {
         }
 
         return undefined
+    }
+
+    protected allowRACComponent(_component: string) {
+        return true
+    }
+
+    protected addRACComponent(config: DeviceDiscovery, name: string, component: DeviceDiscovery['components'][string]) {
+        if (!this.allowRACComponent(name)) return false
+        config['components'][name] = component
+        return true
+    }
+
+    protected addRACField(config: DeviceDiscovery, options: FieldDefinition, autoreg?: boolean) {
+        if (!this.allowRACComponent(options.comp)) return false
+        this.addField(config, options, autoreg)
+        return true
+    }
+
+    protected addModelSpecificComponents(_config: DeviceDiscovery) {
+        /* Subclasses may add fork-specific components before config publish. */
     }
 
     initMakeSetConfig() {
@@ -684,23 +704,24 @@ export default class Device extends TLVDevice {
                 suggested_display_precision: 0,
                 entity_category: 'diagnostic',
             }
-            config['components']['autodry'] = compADry
-            config['components']['autodryremain'] = compADryRem
+            if (this.addRACComponent(config, 'autodry', compADry)) {
+                this.addRACField(config, {
+                    id: 0x20e,
+                    name: '',
+                    comp: 'autodry',
+                    writable: false,
+                    read_xform: (raw) => (raw ? 'ON' : 'OFF'),
+                })
+            }
 
-            this.addField(config, {
-                id: 0x20e,
-                name: '',
-                comp: 'autodry',
-                writable: false,
-                read_xform: (raw) => (raw ? 'ON' : 'OFF'),
-            })
-
-            this.addField(config, {
-                id: 0x225,
-                name: '',
-                comp: 'autodryremain',
-                writable: false,
-            })
+            if (this.addRACComponent(config, 'autodryremain', compADryRem)) {
+                this.addRACField(config, {
+                    id: 0x225,
+                    name: '',
+                    comp: 'autodryremain',
+                    writable: false,
+                })
+            }
         }
 
         if (this.getIDUActionRunningTLVNum() != null) {
@@ -741,7 +762,7 @@ export default class Device extends TLVDevice {
                 state_class: 'total_increasing',
                 entity_category: 'diagnostic',
             }
-            config['components']['filterused'] = filterUsed
+            this.addRACComponent(config, 'filterused', filterUsed)
             const filterLife = {
                 platform: 'sensor',
                 unique_id: '$deviceid-filterlife',
@@ -752,7 +773,7 @@ export default class Device extends TLVDevice {
                 unit_of_measurement: 'h',
                 entity_category: 'diagnostic',
             }
-            config['components']['filterlife'] = filterLife
+            this.addRACComponent(config, 'filterlife', filterLife)
             const filterChanged = {
                 platform: 'sensor',
                 unique_id: '$deviceid-filterchangeddate',
@@ -762,7 +783,7 @@ export default class Device extends TLVDevice {
                 device_class: 'date',
                 entity_category: 'diagnostic',
             }
-            config['components']['changeddate'] = filterChanged
+            this.addRACComponent(config, 'changeddate', filterChanged)
 
             const filterReset = {
                 platform: 'button',
@@ -772,20 +793,22 @@ export default class Device extends TLVDevice {
                 icon: 'mdi:calendar-refresh-outline',
                 entity_category: 'diagnostic',
             }
-            config['components']['filterreset'] = filterReset
-            this.fields_by_ha['filterreset'] = {
-                name: '',
-                comp: '',
-                write_xform: (val) => (val === 'PRESS' ? 1 : 0),
-                write_callback: (val) => {
-                    if (val === 1) this.sendFilterReset()
-                    return false
-                },
+            this.addRACComponent(config, 'filterreset', filterReset)
+            if (this.allowRACComponent('filterreset')) {
+                this.fields_by_ha['filterreset'] = {
+                    name: '',
+                    comp: '',
+                    write_xform: (val) => (val === 'PRESS' ? 1 : 0),
+                    write_callback: (val) => {
+                        if (val === 1) this.sendFilterReset()
+                        return false
+                    },
+                }
             }
         }
 
         // this value is reported as zero by multi-split units
-        if (this.raw_clip_state[0x2b3]) {
+        if (this.raw_clip_state[0x2b3] && this.allowRACComponent('energy_current')) {
             const energyCurrent = {
                 platform: 'sensor',
                 unique_id: '$deviceid-energy_current',
@@ -797,7 +820,7 @@ export default class Device extends TLVDevice {
                 suggested_display_precision: 0,
             }
 
-            config['components']['energy_current'] = energyCurrent
+            this.addRACComponent(config, 'energy_current', energyCurrent)
 
             // The measurements reported by AC appear to be Watts, but they are not accurate in several aspects:
             // - the value is biased by +50
@@ -806,7 +829,7 @@ export default class Device extends TLVDevice {
             //
             // The formula below is expected to be within +/-10% of the actual power consumption. The discrepancy may
             // be highest in fan-only modes.
-            this.addField(config, {
+            this.addRACField(config, {
                 id: 0x2b3,
                 name: '',
                 comp: 'energy_current',
@@ -815,6 +838,7 @@ export default class Device extends TLVDevice {
             })
         }
 
+        this.addModelSpecificComponents(config)
         this.setConfig(config)
         this.publishKnownState()
 
@@ -987,6 +1011,8 @@ export default class Device extends TLVDevice {
             ids = [ids]
         }
 
+        if (!this.allowRACComponent(name)) return
+
         let id = ids.find(
             (val) =>
                 this.raw_clip_state[val] != null &&
@@ -1003,9 +1029,9 @@ export default class Device extends TLVDevice {
             ...extra,
         }
 
-        config['components'][name] = comp
+        if (!this.addRACComponent(config, name, comp)) return
 
-        this.addField(config, {
+        this.addRACField(config, {
             id: id,
             name: '',
             comp: name,
